@@ -48,13 +48,21 @@ jobs:
             --hidden-import PIL._tkinter_finder \
             main.py
 
+      - name: Stage only the .app bundle for upload
+        run: |
+          # --windowed on macOS leaves both dist/FlightQuoteAssistant/ (raw
+          # onedir build) and dist/FlightQuoteAssistant.app (the bundle) --
+          # copy only the .app into its own folder so the artifact contains
+          # nothing else to confuse a downloader.
+          mkdir -p artifact_stage
+          cp -R dist/FlightQuoteAssistant.app artifact_stage/
+
       - uses: actions/upload-artifact@v4
         with:
           name: FlightQuoteAssistant-macOS-${{ matrix.arch_label }}
-          path: dist/FlightQuoteAssistant.app
+          path: artifact_stage
           retention-days: 30
-          # GitHub's "Download artifact" button always wraps the artifact
-          # in one zip of its own. If we pre-zip the .app ourselves here
-          # too, downloaders get a zip-of-a-zip and the app never surfaces
-          # after a single unzip. Uploading the .app directory as-is means
-          # there's only one zip layer to undo.
+          # actions/upload-artifact uploads a directory's *contents*, not
+          # the directory itself -- so pointing at artifact_stage (which
+          # contains only FlightQuoteAssistant.app) means downloaders get
+          # exactly that one named .app folder after a single unzip.
