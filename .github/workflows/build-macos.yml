@@ -18,17 +18,12 @@ on:
       - ".github/workflows/build-macos.yml"
 
 jobs:
+  # NOTE: only Apple Silicon (macos-14) is built. macos-13 (Intel) was
+  # dropped -- GitHub's hosted Intel macOS runners have effectively been
+  # phased out, so a job targeting one just sits at "queued" forever with
+  # no runner ever picking it up.
   build-macos:
-    strategy:
-      matrix:
-        # Build both CPU architectures separately -- a single PyInstaller
-        # run only targets the architecture of the runner it executes on.
-        include:
-          - runner: macos-14      # Apple Silicon (arm64)
-            arch_label: apple-silicon
-          - runner: macos-13      # Intel (x86_64)
-            arch_label: intel
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
@@ -69,7 +64,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: FlightQuoteAssistant-macOS-${{ matrix.arch_label }}
+          name: FlightQuoteAssistant-macOS-apple-silicon
           path: artifact_stage
           retention-days: 30
           # actions/upload-artifact uploads a directory's *contents*, not

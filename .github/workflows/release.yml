@@ -42,15 +42,15 @@ jobs:
           path: dist/FlightQuoteAssistant.exe
           retention-days: 5
 
+  # NOTE: only Apple Silicon (macos-14) is built. macos-13 (Intel) was
+  # dropped -- GitHub's hosted Intel macOS runners have effectively been
+  # phased out, and a job targeting one just sits at "queued" forever with
+  # no runner ever picking it up. That blocked publish-release indefinitely
+  # since it waited on every matrix leg to finish. If Intel Mac support is
+  # needed later, it'll require a different runner source (self-hosted, or
+  # a paid macOS CI provider) rather than GitHub's free hosted pool.
   build-macos:
-    strategy:
-      matrix:
-        include:
-          - runner: macos-14      # Apple Silicon (arm64)
-            arch_label: apple-silicon
-          - runner: macos-13      # Intel (x86_64)
-            arch_label: intel
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
@@ -84,12 +84,12 @@ jobs:
         run: |
           cd dist
           ditto -c -k --sequesterRsrc --keepParent FlightQuoteAssistant.app \
-            "FlightQuoteAssistant-macOS-${{ matrix.arch_label }}.zip"
+            "FlightQuoteAssistant-macOS-apple-silicon.zip"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: release-macos-${{ matrix.arch_label }}
-          path: dist/FlightQuoteAssistant-macOS-${{ matrix.arch_label }}.zip
+          name: release-macos-apple-silicon
+          path: dist/FlightQuoteAssistant-macOS-apple-silicon.zip
           retention-days: 5
 
   publish-release:
@@ -117,6 +117,7 @@ jobs:
 
           - **Windows**: \`FlightQuoteAssistant-Windows.exe\`
           - **Mac (Apple Silicon / M1-M4)**: \`FlightQuoteAssistant-macOS-apple-silicon.zip\`
-          - **Mac (Intel)**: \`FlightQuoteAssistant-macOS-intel.zip\`
+
+          Intel Mac builds aren't currently available (GitHub's hosted Intel macOS runners have been phased out). Apple Silicon covers virtually all Macs sold since late 2020.
 
           Works fully offline with mock flight data out of the box. Add a SerpAPI key in Settings for live fares (optional)."
