@@ -26,7 +26,15 @@ class SearchError(Exception):
 
 
 def get_active_provider():
-    """Return (provider_instance, source_label, warning_or_None)."""
+    """Return (provider_instance, source_label, warning_or_None).
+
+    Mock data is only ever used when mock mode is explicitly enabled, or
+    when no SerpAPI key is configured at all -- there's no other sane
+    option in that case. Once a key IS configured and mock mode is off,
+    a live search failure must surface as an error (see run_search), never
+    silently substitute mock data: showing fake fares as if they were real
+    quotes is worse than showing nothing.
+    """
     mock_enabled = database.get_setting("enable_mock_mode", "true") == "true"
     api_key = database.get_setting("serpapi_api_key", "")
 
@@ -34,10 +42,7 @@ def get_active_provider():
         warning = None if mock_enabled else "SerpAPI key missing; using mock data."
         return MockFlightProvider(), "Mock", warning
 
-    try:
-        return SerpApiFlightProvider(api_key), "Live API", None
-    except SerpApiError as exc:
-        return MockFlightProvider(), "Mock", f"{exc} Falling back to mock data."
+    return SerpApiFlightProvider(api_key), "Live API", None
 
 
 def _cache_key(provider_name, origin, destination, date_, passengers, travel_class, filters, currency):
@@ -68,10 +73,10 @@ def search_flights_for_date(provider, provider_label, origin, destination, date_
                              travel_class, filters, currency="INR", force_refresh=False):
     """Search one leg for one date, using cache unless force_refresh is set.
 
-    Returns (list[FlightOption], source_label, fallback_warning_or_None). The
-    warning is set whenever a live provider call fails and this falls back
-    to mock data, so callers can surface *why* a leg is showing mock fares
-    instead of silently mixing them into a "Live API" result.
+    Returns (list[FlightOption], source_label). Raises SerpApiError if a
+    live provider call fails -- callers must NOT swallow this into a mock
+    fallback; run_search turns it into a SearchError with route/date
+    context so the failure is visible instead of masquerading as real fares.
     """
     cache_minutes = int(database.get_setting("cache_duration_minutes", DEFAULT_SETTINGS["cache_duration_minutes"]))
     key = _cache_key(provider.name, origin, destination, date_, passengers, travel_class, filters, currency)
@@ -79,23 +84,12 @@ def search_flights_for_date(provider, provider_label, origin, destination, date_
     if not force_refresh:
         cached = database.get_cached(key, cache_minutes)
         if cached:
-            return [_flight_from_dict(d) for d in cached["payload"]], "Cached", None
+            return [_flight_from_dict(d) for d in cached["payload"]], "Cached"
 
-    fallback_warning = None
-    try:
-        options = provider.search_flights(origin, destination, date_, passengers, travel_class, filters, currency)
-    except SerpApiError as exc:
-        mock = MockFlightProvider()
-        options = mock.search_flights(origin, destination, date_, passengers, travel_class, filters, currency)
-        provider_label = "Mock"
-        fallback_warning = (
-            f"Live search failed for {origin}->{destination} on {date_.isoformat()} "
-            f"({exc}); showing mock data for this leg instead. Check that '{origin}' and "
-            f"'{destination}' are valid airport/city codes."
-        )
+    options = provider.search_flights(origin, destination, date_, passengers, travel_class, filters, currency)
 
     database.set_cached(key, [o.to_dict() for o in options], source=provider_label)
-    return options, provider_label, fallback_warning
+    return options, provider_label
 
 
 def estimate_request_cost(request):
@@ -131,20 +125,27 @@ def run_search(request, force_refresh=False, progress_callback=None):
         )
 
     provider, provider_label, provider_warning = get_active_provider()
-    fallback_warnings = []
 
     up_dates = sorted({p.up_date for p in date_pairs})
     down_dates = sorted({p.down_date for p in date_pairs})
 
     up_flights_by_date = {}
     for d in up_dates:
-        flights, source, fallback_warning = search_flights_for_date(
-            provider, provider_label, request.up_route.origin, request.up_route.destination,
-            d, request.passengers, request.travel_class, request.filters,
-            currency=request.currency, force_refresh=force_refresh,
-        )
-        if fallback_warning:
-            fallback_warnings.append(fallback_warning)
+        try:
+            flights, source = search_flights_for_date(
+                provider, provider_label, request.up_route.origin, request.up_route.destination,
+                d, request.passengers, request.travel_class, request.filters,
+                currency=request.currency, force_refresh=force_refresh,
+            )
+        except SerpApiError as exc:
+            raise SearchError(
+                f"Live search failed for the UP flight ({request.up_route.origin} -> "
+                f"{request.up_route.destination} on {d.isoformat()}): {exc}\n\n"
+                f"Check that '{request.up_route.origin}' and '{request.up_route.destination}' "
+                f"are valid airport/city codes, and that your SerpAPI key and quota are valid "
+                f"in Settings. No results are shown rather than substituting mock data for a "
+                f"live search."
+            ) from exc
         flights = [f for f in flights if _matches_route_preferences(f, request.up_route)]
         up_flights_by_date[d] = (flights, source)
         if progress_callback:
@@ -152,13 +153,21 @@ def run_search(request, force_refresh=False, progress_callback=None):
 
     down_flights_by_date = {}
     for d in down_dates:
-        flights, source, fallback_warning = search_flights_for_date(
-            provider, provider_label, request.down_route.origin, request.down_route.destination,
-            d, request.passengers, request.travel_class, request.filters,
-            currency=request.currency, force_refresh=force_refresh,
-        )
-        if fallback_warning:
-            fallback_warnings.append(fallback_warning)
+        try:
+            flights, source = search_flights_for_date(
+                provider, provider_label, request.down_route.origin, request.down_route.destination,
+                d, request.passengers, request.travel_class, request.filters,
+                currency=request.currency, force_refresh=force_refresh,
+            )
+        except SerpApiError as exc:
+            raise SearchError(
+                f"Live search failed for the DOWN flight ({request.down_route.origin} -> "
+                f"{request.down_route.destination} on {d.isoformat()}): {exc}\n\n"
+                f"Check that '{request.down_route.origin}' and '{request.down_route.destination}' "
+                f"are valid airport/city codes, and that your SerpAPI key and quota are valid "
+                f"in Settings. No results are shown rather than substituting mock data for a "
+                f"live search."
+            ) from exc
         flights = [f for f in flights if _matches_route_preferences(f, request.down_route)]
         down_flights_by_date[d] = (flights, source)
         if progress_callback:
@@ -210,9 +219,6 @@ def run_search(request, force_refresh=False, progress_callback=None):
     )
     if provider_warning:
         result.fare_warning = provider_warning + " " + result.fare_warning
-    if fallback_warnings:
-        unique_warnings = list(dict.fromkeys(fallback_warnings))
-        result.fare_warning = " | ".join(unique_warnings) + " " + result.fare_warning
     return result
 
 

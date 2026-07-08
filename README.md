@@ -117,8 +117,14 @@ filters, ranking, exports, and saved quotes offline.
 3. Paste the key into "SerpAPI API key" and uncheck "Enable mock mode".
 4. Click **Save Settings**.
 
-If the key is missing or a live request fails, the app automatically falls
-back to mock data and shows a warning — it will never crash on a bad API
+If the key is **missing entirely**, the app falls back to mock data and
+shows a warning, since there's no live option available at all. But once a
+key **is** configured and mock mode is off, a failed live request never
+silently substitutes mock data — showing fake fares as if they were real
+quotes would be worse than showing nothing. Instead the search stops with
+a clear error explaining what failed (invalid route/airport code, bad key,
+quota exceeded, network issue, etc.) so you always know whether you're
+looking at real fares or not. The app still never crashes on a bad API
 response.
 
 ## 7. Adding an OpenAI key (optional, for AI quote wording)
@@ -323,8 +329,12 @@ under each user's own Documents folder) rather than one shared install.
 - **"DOWN date before UP date" error** — the DOWN date range or calculated
   DOWN dates fall before the UP date; adjust the package duration or
   manual DOWN date range.
-- **SerpAPI errors** — check your API key in Settings; the app will fall
-  back to mock data automatically so you can keep working.
+- **SerpAPI errors ("Live search failed for...")** — the search stops and
+  shows exactly what went wrong instead of quietly using mock data. Common
+  causes: an invalid/expired API key, quota exceeded, or an airport/city
+  code Google Flights doesn't recognize (try the 3-letter IATA code
+  directly if a typed city name isn't matching). Fix the cause and search
+  again — it will not silently substitute fake fares for a live search.
 - **PDF/Excel export fails** — make sure the target folder isn't open in
   another program (e.g. the PDF/Excel file itself already open) and that
   you have write permission to the chosen folder.
