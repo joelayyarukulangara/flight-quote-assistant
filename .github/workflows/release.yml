@@ -126,10 +126,35 @@ jobs:
           Works fully offline with mock flight data out of the box. Add a SerpAPI key in Settings for live fares (optional).
           NOTES_EOF
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release (no assets yet)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ github.ref_name }}" release-assets/* \
+          set +e
+          OUTPUT=$(gh release create "${{ github.ref_name }}" \
             --title "Flight Quote Assistant ${{ github.ref_name }}" \
-            --notes-file release-notes.md
+            --notes-file release-notes.md 2>&1)
+          STATUS=$?
+          echo "$OUTPUT"
+          if [ $STATUS -ne 0 ]; then
+            # Surface the real gh CLI error as a public annotation (visible
+            # via the Annotations API without needing an authenticated log
+            # viewer) instead of just a bare "exit code 1".
+            ESCAPED=$(echo "$OUTPUT" | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g' | sed 's/\r/%0D/g')
+            echo "::error::gh release create failed: $ESCAPED"
+            exit $STATUS
+          fi
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          OUTPUT=$(gh release upload "${{ github.ref_name }}" release-assets/* --clobber 2>&1)
+          STATUS=$?
+          echo "$OUTPUT"
+          if [ $STATUS -ne 0 ]; then
+            ESCAPED=$(echo "$OUTPUT" | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g' | sed 's/\r/%0D/g')
+            echo "::error::gh release upload failed: $ESCAPED"
+            exit $STATUS
+          fi
