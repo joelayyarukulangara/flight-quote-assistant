@@ -98,6 +98,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        # gh release create needs to run inside a git repository to
+        # resolve the target commitish for the tag -- this job previously
+        # only downloaded artifacts, with no .git directory in the
+        # workspace at all, which is what "fatal: not a git repository"
+        # turned out to mean.
+
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
