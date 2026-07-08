@@ -11,7 +11,7 @@ class FlightProvider(ABC):
     name = "base"
 
     @abstractmethod
-    def search_flights(self, origin, destination, date_, passengers, travel_class, filters):
+    def search_flights(self, origin, destination, date_, passengers, travel_class, filters, currency="INR"):
         """Return list[FlightOption] for a single origin/destination/date search.
 
         Args:
@@ -21,5 +21,11 @@ class FlightProvider(ABC):
             passengers: models.PassengerInfo
             travel_class: str
             filters: models.SearchFilters
+            currency: str currency code the returned FlightOption.fare values
+                must be denominated in (e.g. "INR", "AED", "USD", "EUR").
+                Implementations must set FlightOption.currency to match --
+                callers display fares using the requested currency label
+                without re-converting, so a mismatch here silently produces
+                wildly wrong-looking prices.
         """
         raise NotImplementedError

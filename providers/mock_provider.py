@@ -39,6 +39,16 @@ BAGGAGE_BY_AIRLINE = {
 
 LAYOVER_AIRPORTS = ["DOH", "BOM", "DEL", "AUH", "BAH", "MCT"]
 
+# Rough, static conversion rates from INR (the base currency all mock fares
+# are generated in). Good enough to keep mock-mode numbers in a sane
+# ballpark for any selected currency -- not for real conversions.
+INR_CONVERSION_RATES = {
+    "INR": 1.0,
+    "AED": 1 / 23.0,
+    "USD": 1 / 83.0,
+    "EUR": 1 / 90.0,
+}
+
 
 def _base_fare(origin, destination, travel_class):
     seed = sum(ord(c) for c in (origin + destination))
@@ -50,9 +60,10 @@ def _base_fare(origin, destination, travel_class):
 class MockFlightProvider(FlightProvider):
     name = "Mock"
 
-    def search_flights(self, origin, destination, date_, passengers, travel_class, filters):
+    def search_flights(self, origin, destination, date_, passengers, travel_class, filters, currency="INR"):
         rng = random.Random(f"{origin}-{destination}-{date_.isoformat()}-{travel_class}")
         base_fare = _base_fare(origin, destination, travel_class)
+        rate = INR_CONVERSION_RATES.get(currency, 1.0)
         options = []
 
         templates = [
@@ -68,7 +79,7 @@ class MockFlightProvider(FlightProvider):
         for airline_idx, stops, dep_hour, extra_fare, layover_minutes, tag in templates:
             airline, code = AIRLINES[airline_idx]
             jitter = rng.randint(-400, 400)
-            fare = max(3000, base_fare + extra_fare + jitter)
+            fare = max(3000, base_fare + extra_fare + jitter) * rate
             dep_minute = rng.choice([0, 10, 20, 30, 45])
             departure = datetime.combine(date_, datetime.min.time()) + timedelta(
                 hours=dep_hour, minutes=dep_minute
@@ -113,8 +124,8 @@ class MockFlightProvider(FlightProvider):
                     airport_change_required=airport_change_required,
                     baggage_info=BAGGAGE_BY_AIRLINE.get(airline, "Baggage info to be verified before ticketing"),
                     refund_info="Non-refundable; date change fee applies (to be verified before ticketing)",
-                    fare=float(fare),
-                    currency="INR",
+                    fare=round(float(fare), 2),
+                    currency=currency,
                     booking_source="Mock Data",
                     warnings=warnings,
                 )

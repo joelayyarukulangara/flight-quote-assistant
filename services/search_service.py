@@ -40,11 +40,11 @@ def get_active_provider():
         return MockFlightProvider(), "Mock", f"{exc} Falling back to mock data."
 
 
-def _cache_key(provider_name, origin, destination, date_, passengers, travel_class, filters):
+def _cache_key(provider_name, origin, destination, date_, passengers, travel_class, filters, currency):
     parts = [
         provider_name, origin, destination, date_.isoformat(),
         str(passengers.adults), str(passengers.children), str(passengers.infants),
-        travel_class, filters.baggage_required, str(filters.max_stops),
+        travel_class, filters.baggage_required, str(filters.max_stops), currency,
     ]
     return "|".join(parts)
 
@@ -65,10 +65,10 @@ def _flight_from_dict(d):
 
 
 def search_flights_for_date(provider, provider_label, origin, destination, date_, passengers,
-                             travel_class, filters, force_refresh=False):
+                             travel_class, filters, currency="INR", force_refresh=False):
     """Search one leg for one date, using cache unless force_refresh is set. Returns (list[FlightOption], source_label)."""
     cache_minutes = int(database.get_setting("cache_duration_minutes", DEFAULT_SETTINGS["cache_duration_minutes"]))
-    key = _cache_key(provider.name, origin, destination, date_, passengers, travel_class, filters)
+    key = _cache_key(provider.name, origin, destination, date_, passengers, travel_class, filters, currency)
 
     if not force_refresh:
         cached = database.get_cached(key, cache_minutes)
@@ -76,10 +76,10 @@ def search_flights_for_date(provider, provider_label, origin, destination, date_
             return [_flight_from_dict(d) for d in cached["payload"]], "Cached"
 
     try:
-        options = provider.search_flights(origin, destination, date_, passengers, travel_class, filters)
+        options = provider.search_flights(origin, destination, date_, passengers, travel_class, filters, currency)
     except SerpApiError:
         mock = MockFlightProvider()
-        options = mock.search_flights(origin, destination, date_, passengers, travel_class, filters)
+        options = mock.search_flights(origin, destination, date_, passengers, travel_class, filters, currency)
         provider_label = "Mock"
 
     database.set_cached(key, [o.to_dict() for o in options], source=provider_label)
@@ -127,7 +127,8 @@ def run_search(request, force_refresh=False, progress_callback=None):
     for d in up_dates:
         flights, source = search_flights_for_date(
             provider, provider_label, request.up_route.origin, request.up_route.destination,
-            d, request.passengers, request.travel_class, request.filters, force_refresh,
+            d, request.passengers, request.travel_class, request.filters,
+            currency=request.currency, force_refresh=force_refresh,
         )
         flights = [f for f in flights if _matches_route_preferences(f, request.up_route)]
         up_flights_by_date[d] = (flights, source)
@@ -138,7 +139,8 @@ def run_search(request, force_refresh=False, progress_callback=None):
     for d in down_dates:
         flights, source = search_flights_for_date(
             provider, provider_label, request.down_route.origin, request.down_route.destination,
-            d, request.passengers, request.travel_class, request.filters, force_refresh,
+            d, request.passengers, request.travel_class, request.filters,
+            currency=request.currency, force_refresh=force_refresh,
         )
         flights = [f for f in flights if _matches_route_preferences(f, request.down_route)]
         down_flights_by_date[d] = (flights, source)

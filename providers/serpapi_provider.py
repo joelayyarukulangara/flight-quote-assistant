@@ -29,7 +29,7 @@ class SerpApiFlightProvider(FlightProvider):
             raise SerpApiError("SerpAPI API key is missing.")
         self.api_key = api_key
 
-    def search_flights(self, origin, destination, date_, passengers, travel_class, filters):
+    def search_flights(self, origin, destination, date_, passengers, travel_class, filters, currency="INR"):
         params = {
             "engine": "google_flights",
             "departure_id": origin,
@@ -41,7 +41,7 @@ class SerpApiFlightProvider(FlightProvider):
             "infants_in_seat": 0,
             "infants_on_lap": passengers.infants,
             "travel_class": self._map_travel_class(travel_class),
-            "currency": "INR",
+            "currency": currency,
             "api_key": self.api_key,
         }
         try:
@@ -59,7 +59,7 @@ class SerpApiFlightProvider(FlightProvider):
         results = []
         for bucket_key in ("best_flights", "other_flights"):
             for item in data.get(bucket_key, []) or []:
-                option = self._normalize(item, origin, destination)
+                option = self._normalize(item, origin, destination, currency)
                 if option:
                     results.append(option)
         return results
@@ -69,10 +69,17 @@ class SerpApiFlightProvider(FlightProvider):
         mapping = {"Economy": "1", "Premium Economy": "2", "Business": "3", "First": "4"}
         return mapping.get(travel_class, "1")
 
-    def _normalize(self, item, origin, destination):
+    def _normalize(self, item, origin, destination, currency="INR"):
         try:
             legs = item.get("flights", [])
             if not legs:
+                return None
+
+            price = item.get("price")
+            if not price or float(price) <= 0:
+                # A missing/zero price means this result can't actually be
+                # booked at a known fare -- treating it as fare=0 would let
+                # it masquerade as the "cheapest" option and corrupt ranking.
                 return None
             first_leg = legs[0]
             last_leg = legs[-1]
@@ -97,7 +104,7 @@ class SerpApiFlightProvider(FlightProvider):
             airline_code = first_leg.get("airline_logo", "")[:2].upper() if not first_leg.get("flight_number") else first_leg["flight_number"][:2]
             flight_number = first_leg.get("flight_number", "")
 
-            fare = float(item.get("price") or 0)
+            fare = float(price)
 
             return FlightOption(
                 provider=self.name,
@@ -116,7 +123,7 @@ class SerpApiFlightProvider(FlightProvider):
                 baggage_info=item.get("baggage", "To be verified before ticketing"),
                 refund_info="To be verified before ticketing",
                 fare=fare,
-                currency="INR",
+                currency=currency,
                 booking_source="SerpAPI / Google Flights",
                 warnings=[],
             )
