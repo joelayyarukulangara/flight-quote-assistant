@@ -1,0 +1,112 @@
+name: Build and publish release
+
+# Builds Windows + macOS (both architectures), then publishes all of them
+# to a GitHub Release attached to the pushed tag. Release assets are
+# public, permanent download links that work for anyone -- no GitHub
+# account or login required, unlike plain workflow-run artifacts.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --noconfirm --onefile --windowed --name "FlightQuoteAssistant" `
+            --collect-all customtkinter `
+            --hidden-import PIL._tkinter_finder `
+            main.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: dist/FlightQuoteAssistant.exe
+          retention-days: 5
+
+  build-macos:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-14      # Apple Silicon (arm64)
+            arch_label: apple-silicon
+          - runner: macos-13      # Intel (x86_64)
+            arch_label: intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --noconfirm --windowed --name "FlightQuoteAssistant" \
+            --collect-all customtkinter \
+            --hidden-import PIL._tkinter_finder \
+            main.py
+
+      - name: Zip the .app bundle for release
+        run: |
+          cd dist
+          ditto -c -k --sequesterRsrc --keepParent FlightQuoteAssistant.app \
+            "FlightQuoteAssistant-macOS-${{ matrix.arch_label }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-${{ matrix.arch_label }}
+          path: dist/FlightQuoteAssistant-macOS-${{ matrix.arch_label }}.zip
+          retention-days: 5
+
+  publish-release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Rename Windows exe for clarity
+        run: mv release-assets/FlightQuoteAssistant.exe release-assets/FlightQuoteAssistant-Windows.exe
+
+      - name: List assets to publish
+        run: ls -la release-assets
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" release-assets/* \
+            --title "Flight Quote Assistant ${{ github.ref_name }}" \
+            --notes "Download the file for your OS below -- no installer needed, just run it.
+
+          - **Windows**: \`FlightQuoteAssistant-Windows.exe\`
+          - **Mac (Apple Silicon / M1-M4)**: \`FlightQuoteAssistant-macOS-apple-silicon.zip\`
+          - **Mac (Intel)**: \`FlightQuoteAssistant-macOS-intel.zip\`
+
+          Works fully offline with mock flight data out of the box. Add a SerpAPI key in Settings for live fares (optional)."
