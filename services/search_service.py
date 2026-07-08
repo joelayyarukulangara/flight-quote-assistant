@@ -124,7 +124,10 @@ def run_search(request, force_refresh=False, progress_callback=None):
             "package duration (DOWN date must fall after UP date)."
         )
 
-    provider, provider_label, provider_warning = get_active_provider()
+    try:
+        provider, provider_label, provider_warning = get_active_provider()
+    except SerpApiError as exc:
+        raise SearchError(str(exc)) from exc
 
     up_dates = sorted({p.up_date for p in date_pairs})
     down_dates = sorted({p.down_date for p in date_pairs})

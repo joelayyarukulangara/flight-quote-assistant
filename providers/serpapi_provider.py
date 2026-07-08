@@ -7,6 +7,7 @@ settings (see database.py / Settings tab). If the key is missing or the
 request fails, callers should fall back to the mock provider (see
 services/search_service.py).
 """
+import re
 from datetime import datetime
 
 import requests
@@ -21,12 +22,39 @@ class SerpApiError(Exception):
     pass
 
 
+def _redact_api_key(text: str, api_key: str) -> str:
+    """Strip an API key from error text before it can reach a UI/log.
+
+    requests' own exception messages (e.g. from raise_for_status()) include
+    the full request URL, query string and all -- so the key must be
+    scrubbed defensively rather than trusted not to appear.
+    """
+    if not text or not api_key:
+        return text
+    redacted = text.replace(api_key, "[REDACTED]")
+    # Also catch the URL-encoded form, since it appears in request URLs.
+    redacted = re.sub(r"(?i)(api_key=)[^&\s]+", r"\1[REDACTED]", redacted)
+    return redacted
+
+
 class SerpApiFlightProvider(FlightProvider):
     name = "Live API"
 
     def __init__(self, api_key: str):
         if not api_key:
             raise SerpApiError("SerpAPI API key is missing.")
+        if re.search(r"\s", api_key) or len(api_key) > 128:
+            # A real SerpAPI key is a short token with no whitespace. This
+            # usually means something else (a pasted message, a URL, etc.)
+            # ended up in the API key field by mistake -- fail fast with a
+            # clear message instead of sending it to SerpAPI and leaking it
+            # into a network request / error log.
+            raise SerpApiError(
+                "The configured SerpAPI key doesn't look like a valid key "
+                "(it contains spaces or is unusually long). Check Settings "
+                "-- it looks like something other than an API key may have "
+                "been pasted into that field."
+            )
         self.api_key = api_key
 
     def search_flights(self, origin, destination, date_, passengers, travel_class, filters, currency="INR"):
@@ -49,12 +77,12 @@ class SerpApiFlightProvider(FlightProvider):
             response.raise_for_status()
             data = response.json()
         except requests.RequestException as exc:
-            raise SerpApiError(f"SerpAPI request failed: {exc}") from exc
+            raise SerpApiError(f"SerpAPI request failed: {_redact_api_key(str(exc), self.api_key)}") from exc
         except ValueError as exc:
             raise SerpApiError(f"SerpAPI returned invalid JSON: {exc}") from exc
 
         if "error" in data:
-            raise SerpApiError(f"SerpAPI error: {data['error']}")
+            raise SerpApiError(f"SerpAPI error: {_redact_api_key(str(data['error']), self.api_key)}")
 
         results = []
         for bucket_key in ("best_flights", "other_flights"):
