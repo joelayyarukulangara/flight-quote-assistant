@@ -48,14 +48,13 @@ jobs:
             --hidden-import PIL._tkinter_finder \
             main.py
 
-      - name: Zip the .app bundle
-        run: |
-          cd dist
-          ditto -c -k --sequesterRsrc --keepParent FlightQuoteAssistant.app \
-            "FlightQuoteAssistant-macOS-${{ matrix.arch_label }}.zip"
-
       - uses: actions/upload-artifact@v4
         with:
           name: FlightQuoteAssistant-macOS-${{ matrix.arch_label }}
-          path: dist/FlightQuoteAssistant-macOS-${{ matrix.arch_label }}.zip
+          path: dist/FlightQuoteAssistant.app
           retention-days: 30
+          # GitHub's "Download artifact" button always wraps the artifact
+          # in one zip of its own. If we pre-zip the .app ourselves here
+          # too, downloaders get a zip-of-a-zip and the app never surfaces
+          # after a single unzip. Uploading the .app directory as-is means
+          # there's only one zip layer to undo.
