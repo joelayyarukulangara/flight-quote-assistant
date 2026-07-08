@@ -1,0 +1,61 @@
+name: Build macOS app
+
+# Builds a standalone macOS .app bundle of Flight Quote Assistant using
+# PyInstaller on GitHub's macOS runners (PyInstaller cannot cross-compile,
+# so the build must actually run on macOS).
+#
+# Trigger manually from the Actions tab ("Run workflow"), or automatically
+# on every push to main. The built .app is uploaded as a downloadable
+# workflow artifact.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "**.py"
+      - "requirements.txt"
+      - ".github/workflows/build-macos.yml"
+
+jobs:
+  build-macos:
+    strategy:
+      matrix:
+        # Build both CPU architectures separately -- a single PyInstaller
+        # run only targets the architecture of the runner it executes on.
+        include:
+          - runner: macos-14      # Apple Silicon (arm64)
+            arch_label: apple-silicon
+          - runner: macos-13      # Intel (x86_64)
+            arch_label: intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --noconfirm --windowed --name "FlightQuoteAssistant" \
+            --collect-all customtkinter \
+            --hidden-import PIL._tkinter_finder \
+            main.py
+
+      - name: Zip the .app bundle
+        run: |
+          cd dist
+          ditto -c -k --sequesterRsrc --keepParent FlightQuoteAssistant.app \
+            "FlightQuoteAssistant-macOS-${{ matrix.arch_label }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FlightQuoteAssistant-macOS-${{ matrix.arch_label }}
+          path: dist/FlightQuoteAssistant-macOS-${{ matrix.arch_label }}.zip
+          retention-days: 30
