@@ -31,6 +31,18 @@ KNOWN_AIRPORTS = {
     "DELHI": "DEL",
     "CALICUT": "CCJ",
     "KOZHIKODE": "CCJ",
+    "MOSCOW": "MOW",
+    "ISTANBUL": "IST",
+    "LONDON": "LON",
+    "PARIS": "PAR",
+    "NEW YORK": "NYC",
+    "MALE": "MLE",
+    "COLOMBO": "CMB",
+    "CAIRO": "CAI",
+    "MANILA": "MNL",
+    "HONG KONG": "HKG",
+    "TOKYO": "TYO",
+    "SEOUL": "SEL",
 }
 
 

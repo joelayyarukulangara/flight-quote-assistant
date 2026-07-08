@@ -66,24 +66,36 @@ def _flight_from_dict(d):
 
 def search_flights_for_date(provider, provider_label, origin, destination, date_, passengers,
                              travel_class, filters, currency="INR", force_refresh=False):
-    """Search one leg for one date, using cache unless force_refresh is set. Returns (list[FlightOption], source_label)."""
+    """Search one leg for one date, using cache unless force_refresh is set.
+
+    Returns (list[FlightOption], source_label, fallback_warning_or_None). The
+    warning is set whenever a live provider call fails and this falls back
+    to mock data, so callers can surface *why* a leg is showing mock fares
+    instead of silently mixing them into a "Live API" result.
+    """
     cache_minutes = int(database.get_setting("cache_duration_minutes", DEFAULT_SETTINGS["cache_duration_minutes"]))
     key = _cache_key(provider.name, origin, destination, date_, passengers, travel_class, filters, currency)
 
     if not force_refresh:
         cached = database.get_cached(key, cache_minutes)
         if cached:
-            return [_flight_from_dict(d) for d in cached["payload"]], "Cached"
+            return [_flight_from_dict(d) for d in cached["payload"]], "Cached", None
 
+    fallback_warning = None
     try:
         options = provider.search_flights(origin, destination, date_, passengers, travel_class, filters, currency)
-    except SerpApiError:
+    except SerpApiError as exc:
         mock = MockFlightProvider()
         options = mock.search_flights(origin, destination, date_, passengers, travel_class, filters, currency)
         provider_label = "Mock"
+        fallback_warning = (
+            f"Live search failed for {origin}->{destination} on {date_.isoformat()} "
+            f"({exc}); showing mock data for this leg instead. Check that '{origin}' and "
+            f"'{destination}' are valid airport/city codes."
+        )
 
     database.set_cached(key, [o.to_dict() for o in options], source=provider_label)
-    return options, provider_label
+    return options, provider_label, fallback_warning
 
 
 def estimate_request_cost(request):
@@ -119,17 +131,20 @@ def run_search(request, force_refresh=False, progress_callback=None):
         )
 
     provider, provider_label, provider_warning = get_active_provider()
+    fallback_warnings = []
 
     up_dates = sorted({p.up_date for p in date_pairs})
     down_dates = sorted({p.down_date for p in date_pairs})
 
     up_flights_by_date = {}
     for d in up_dates:
-        flights, source = search_flights_for_date(
+        flights, source, fallback_warning = search_flights_for_date(
             provider, provider_label, request.up_route.origin, request.up_route.destination,
             d, request.passengers, request.travel_class, request.filters,
             currency=request.currency, force_refresh=force_refresh,
         )
+        if fallback_warning:
+            fallback_warnings.append(fallback_warning)
         flights = [f for f in flights if _matches_route_preferences(f, request.up_route)]
         up_flights_by_date[d] = (flights, source)
         if progress_callback:
@@ -137,11 +152,13 @@ def run_search(request, force_refresh=False, progress_callback=None):
 
     down_flights_by_date = {}
     for d in down_dates:
-        flights, source = search_flights_for_date(
+        flights, source, fallback_warning = search_flights_for_date(
             provider, provider_label, request.down_route.origin, request.down_route.destination,
             d, request.passengers, request.travel_class, request.filters,
             currency=request.currency, force_refresh=force_refresh,
         )
+        if fallback_warning:
+            fallback_warnings.append(fallback_warning)
         flights = [f for f in flights if _matches_route_preferences(f, request.down_route)]
         down_flights_by_date[d] = (flights, source)
         if progress_callback:
@@ -193,6 +210,9 @@ def run_search(request, force_refresh=False, progress_callback=None):
     )
     if provider_warning:
         result.fare_warning = provider_warning + " " + result.fare_warning
+    if fallback_warnings:
+        unique_warnings = list(dict.fromkeys(fallback_warnings))
+        result.fare_warning = " | ".join(unique_warnings) + " " + result.fare_warning
     return result
 
 
