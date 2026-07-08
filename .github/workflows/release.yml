@@ -1,9 +1,9 @@
 name: Build and publish release
 
-# Builds Windows + macOS (both architectures), then publishes all of them
-# to a GitHub Release attached to the pushed tag. Release assets are
-# public, permanent download links that work for anyone -- no GitHub
-# account or login required, unlike plain workflow-run artifacts.
+# Builds Windows + macOS (Apple Silicon), then publishes both to a GitHub
+# Release attached to the pushed tag. Release assets are public, permanent
+# download links that work for anyone -- no GitHub account or login
+# required, unlike plain workflow-run artifacts.
 
 on:
   workflow_dispatch:
@@ -95,6 +95,8 @@ jobs:
   publish-release:
     needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -107,17 +109,27 @@ jobs:
       - name: List assets to publish
         run: ls -la release-assets
 
+      - name: Write release notes to a file
+        # Passing a multi-line, markdown-heavy string as an inline --notes
+        # argument is fragile (quoting/escaping across YAML -> bash -> gh).
+        # A single-quoted heredoc sidesteps all of that -- nothing inside
+        # it is interpreted by the shell at all.
+        run: |
+          cat <<'NOTES_EOF' > release-notes.md
+          Download the file for your OS below -- no installer needed, just run it.
+
+          - **Windows**: `FlightQuoteAssistant-Windows.exe`
+          - **Mac (Apple Silicon / M1-M4)**: `FlightQuoteAssistant-macOS-apple-silicon.zip`
+
+          Intel Mac builds aren't currently available (GitHub's hosted Intel macOS runners have been phased out). Apple Silicon covers virtually all Macs sold since late 2020.
+
+          Works fully offline with mock flight data out of the box. Add a SerpAPI key in Settings for live fares (optional).
+          NOTES_EOF
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ github.ref_name }}" release-assets/* \
             --title "Flight Quote Assistant ${{ github.ref_name }}" \
-            --notes "Download the file for your OS below -- no installer needed, just run it.
-
-          - **Windows**: \`FlightQuoteAssistant-Windows.exe\`
-          - **Mac (Apple Silicon / M1-M4)**: \`FlightQuoteAssistant-macOS-apple-silicon.zip\`
-
-          Intel Mac builds aren't currently available (GitHub's hosted Intel macOS runners have been phased out). Apple Silicon covers virtually all Macs sold since late 2020.
-
-          Works fully offline with mock flight data out of the box. Add a SerpAPI key in Settings for live fares (optional)."
+            --notes-file release-notes.md
