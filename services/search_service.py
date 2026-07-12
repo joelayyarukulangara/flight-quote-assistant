@@ -13,8 +13,10 @@ from datetime import datetime
 import database
 from config import DEFAULT_SETTINGS
 from models import PackageFlightCombination, QuoteResult, FlightOption, Layover
+from providers.base import FlightProviderError
 from providers.mock_provider import MockFlightProvider
-from providers.serpapi_provider import SerpApiFlightProvider, SerpApiError
+from providers.serpapi_provider import SerpApiFlightProvider
+from providers.searchapi_provider import SearchApiFlightProvider
 from services.date_pair_service import generate_date_pairs, estimate_search_cost
 from services.ranking_service import select_best_four
 from utils.date_utils import matches_time_preference, now_str
@@ -28,21 +30,29 @@ class SearchError(Exception):
 def get_active_provider():
     """Return (provider_instance, source_label, warning_or_None).
 
-    Mock data is only ever used when mock mode is explicitly enabled, or
-    when no SerpAPI key is configured at all -- there's no other sane
-    option in that case. Once a key IS configured and mock mode is off,
+    Provider selection is driven by the "flight_provider" setting. Mock
+    data is only ever used when the Mock provider is explicitly selected,
+    or when the selected live provider has no API key configured at all --
+    there's no other sane option in that case. Once a key IS configured,
     a live search failure must surface as an error (see run_search), never
     silently substitute mock data: showing fake fares as if they were real
     quotes is worse than showing nothing.
     """
-    mock_enabled = database.get_setting("enable_mock_mode", "true") == "true"
-    api_key = database.get_setting("serpapi_api_key", "")
+    choice = database.get_setting("flight_provider", DEFAULT_SETTINGS["flight_provider"])
 
-    if mock_enabled or not api_key:
-        warning = None if mock_enabled else "SerpAPI key missing; using mock data."
-        return MockFlightProvider(), "Mock", warning
+    if choice.startswith("SerpAPI"):
+        api_key = database.get_setting("serpapi_api_key", "")
+        if not api_key:
+            return MockFlightProvider(), "Mock", "SerpAPI key missing; using mock data."
+        return SerpApiFlightProvider(api_key), "Live API", None
 
-    return SerpApiFlightProvider(api_key), "Live API", None
+    if choice.startswith("SearchAPI"):
+        api_key = database.get_setting("searchapi_api_key", "")
+        if not api_key:
+            return MockFlightProvider(), "Mock", "SearchAPI key missing; using mock data."
+        return SearchApiFlightProvider(api_key), "Live API", None
+
+    return MockFlightProvider(), "Mock", None
 
 
 def _cache_key(provider_name, origin, destination, date_, passengers, travel_class, filters, currency):
@@ -73,7 +83,7 @@ def search_flights_for_date(provider, provider_label, origin, destination, date_
                              travel_class, filters, currency="INR", force_refresh=False):
     """Search one leg for one date, using cache unless force_refresh is set.
 
-    Returns (list[FlightOption], source_label). Raises SerpApiError if a
+    Returns (list[FlightOption], source_label). Raises FlightProviderError if a
     live provider call fails -- callers must NOT swallow this into a mock
     fallback; run_search turns it into a SearchError with route/date
     context so the failure is visible instead of masquerading as real fares.
@@ -126,7 +136,7 @@ def run_search(request, force_refresh=False, progress_callback=None):
 
     try:
         provider, provider_label, provider_warning = get_active_provider()
-    except SerpApiError as exc:
+    except FlightProviderError as exc:
         raise SearchError(str(exc)) from exc
 
     up_dates = sorted({p.up_date for p in date_pairs})
@@ -140,12 +150,12 @@ def run_search(request, force_refresh=False, progress_callback=None):
                 d, request.passengers, request.travel_class, request.filters,
                 currency=request.currency, force_refresh=force_refresh,
             )
-        except SerpApiError as exc:
+        except FlightProviderError as exc:
             raise SearchError(
                 f"Live search failed for the UP flight ({request.up_route.origin} -> "
                 f"{request.up_route.destination} on {d.isoformat()}): {exc}\n\n"
                 f"Check that '{request.up_route.origin}' and '{request.up_route.destination}' "
-                f"are valid airport/city codes, and that your SerpAPI key and quota are valid "
+                f"are valid airport/city codes, and that your flight API key and quota are valid "
                 f"in Settings. No results are shown rather than substituting mock data for a "
                 f"live search."
             ) from exc
@@ -162,12 +172,12 @@ def run_search(request, force_refresh=False, progress_callback=None):
                 d, request.passengers, request.travel_class, request.filters,
                 currency=request.currency, force_refresh=force_refresh,
             )
-        except SerpApiError as exc:
+        except FlightProviderError as exc:
             raise SearchError(
                 f"Live search failed for the DOWN flight ({request.down_route.origin} -> "
                 f"{request.down_route.destination} on {d.isoformat()}): {exc}\n\n"
                 f"Check that '{request.down_route.origin}' and '{request.down_route.destination}' "
-                f"are valid airport/city codes, and that your SerpAPI key and quota are valid "
+                f"are valid airport/city codes, and that your flight API key and quota are valid "
                 f"in Settings. No results are shown rather than substituting mock data for a "
                 f"live search."
             ) from exc

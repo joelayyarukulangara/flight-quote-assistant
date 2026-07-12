@@ -110,34 +110,57 @@ layover, premium airline, late-night, and an example airline useful for
 testing the "blocked airline" filter) so you can fully test searches,
 filters, ranking, exports, and saved quotes offline.
 
-## 6. Adding a SerpAPI key (for live fares)
+## 6. Choosing a flight data provider (for live fares)
 
-1. Get a SerpAPI key from https://serpapi.com/ (Google Flights engine).
-2. Open the **Settings** tab in the app.
-3. Paste the key into "SerpAPI API key" and uncheck "Enable mock mode".
-4. Click **Save Settings**.
+The **Settings** tab has a "Flight data source" dropdown:
 
-If the key is **missing entirely**, the app falls back to mock data and
-shows a warning, since there's no live option available at all. But once a
-key **is** configured and mock mode is off, a failed live request never
-silently substitutes mock data — showing fake fares as if they were real
-quotes would be worse than showing nothing. Instead the search stops with
-a clear error explaining what failed (invalid route/airport code, bad key,
-quota exceeded, network issue, etc.) so you always know whether you're
-looking at real fares or not. The app still never crashes on a bad API
-response.
+- **Mock (sample data)** — default; realistic offline sample fares.
+- **SerpAPI (Google Flights)** — get a key from https://serpapi.com/,
+  paste it into "SerpAPI API key".
+- **SearchAPI (Google Flights)** — get a key from https://www.searchapi.io/,
+  paste it into "SearchAPI API key".
 
-## 7. Adding an OpenAI key (optional, for AI quote wording)
+Pick the provider, paste that provider's key, click **Save Settings**.
 
-1. Get an API key from https://platform.openai.com/.
-2. In **Settings**, paste it into "OpenAI API key", tick "Enable AI
-   summary", pick a model and language, then **Save Settings**.
+**Can any flight API be added just with a key?** Not automatically —
+unlike LLMs (below), there's no universal flight-API standard: each
+vendor has different authentication, request parameters, and response
+shapes. But the app's provider architecture (`providers/base.py`) makes
+each new integration a single small adapter file (~100 lines; see
+`providers/searchapi_provider.py` for a template). Amadeus, Duffel, Kiwi
+etc. can be added the same way.
+
+If the selected provider's key is **missing entirely**, the app falls
+back to mock data and shows a warning, since there's no live option
+available at all. But once a key **is** configured, a failed live request
+never silently substitutes mock data — showing fake fares as if they were
+real quotes would be worse than showing nothing. Instead the search stops
+with a clear error explaining what failed (invalid route/airport code,
+bad key, quota exceeded, network issue, etc.) so you always know whether
+you're looking at real fares or not. The app still never crashes on a bad
+API response.
+
+## 7. Adding an LLM key (optional, for AI quote wording)
+
+The AI quote wording works with **any LLM provider that exposes an
+OpenAI-compatible endpoint** — which is nearly all of them: OpenAI, Groq,
+Mistral, DeepSeek, OpenRouter, Together, Google Gemini, and even local
+Ollama. Switching providers is just: key + base URL + model name.
+
+1. Get an API key from your chosen LLM provider.
+2. In **Settings → AI Quote Wording**: paste the key, pick a provider
+   preset (which fills in the base URL — or paste any OpenAI-compatible
+   base URL manually), enter one of that provider's model names (e.g.
+   `gpt-4o-mini` for OpenAI, `llama-3.3-70b-versatile` for Groq), tick
+   "Enable AI summary", then **Save Settings**.
 3. In the **Results** tab, click **Generate AI Quote** to produce
    customer-ready wording for the best 4 options (copied to clipboard).
 
 This is entirely optional. Without a key, the app uses a rule-based quote
-template automatically and works fully. AI is only called when you click
-"Generate AI Quote" — never automatically after a search, to control cost.
+template automatically and works fully. The LLM is only called when you
+click "Generate AI Quote" — never automatically after a search, to control
+cost — and it never fetches or invents fares; it only rewords results the
+flight provider already returned.
 
 ## 8. Build a Windows EXE
 

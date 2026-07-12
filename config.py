@@ -103,16 +103,38 @@ RETURN_CALC_RULES = [
     "Allow next-day early-morning return",
 ]
 
-AI_MODELS = {
-    "nano / cheapest": "gpt-4.1-nano",
-    "mini / better": "gpt-4.1-mini",
-}
+# Flight data providers selectable in Settings. Each live provider needs
+# its own adapter in providers/ (there is no universal flight-API standard;
+# every vendor has different auth, params, and response shapes).
+FLIGHT_PROVIDERS = [
+    "Mock (sample data)",
+    "SerpAPI (Google Flights)",
+    "SearchAPI (Google Flights)",
+]
 
 AI_LANGUAGES = ["English", "Malayalam", "Hindi", "Arabic"]
 
+# Common OpenAI-compatible LLM endpoints, offered as presets in Settings.
+# Any other OpenAI-compatible base URL can be typed in manually -- most
+# LLM vendors (OpenAI, Groq, Mistral, DeepSeek, OpenRouter, Together,
+# Gemini, local Ollama) expose this same API shape.
+AI_BASE_URL_PRESETS = {
+    "OpenAI": "https://api.openai.com/v1",
+    "Groq": "https://api.groq.com/openai/v1",
+    "OpenRouter": "https://openrouter.ai/api/v1",
+    "Mistral": "https://api.mistral.ai/v1",
+    "DeepSeek": "https://api.deepseek.com/v1",
+    "Gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "Ollama (local)": "http://localhost:11434/v1",
+}
+
 DEFAULT_SETTINGS = {
+    "flight_provider": "Mock (sample data)",
     "serpapi_api_key": "",
+    "searchapi_api_key": "",
     "openai_api_key": "",
+    "ai_base_url": "https://api.openai.com/v1",
+    "ai_model_name": "gpt-4o-mini",
     "default_currency": "INR",
     "default_markup_type": "No markup",
     "default_markup_value": "0",
@@ -122,9 +144,8 @@ DEFAULT_SETTINGS = {
     "default_min_layover": "1 hour 15 minutes",
     "default_baggage": "Checked baggage required",
     "return_calc_rule": RETURN_CALC_RULES[0],
-    "enable_mock_mode": "true",
+    "enable_mock_mode": "true",  # legacy; superseded by flight_provider
     "enable_ai_summary": "false",
-    "ai_model": "nano / cheapest",
     "ai_language": "English",
     "company_name": "Your Travel Company",
 }

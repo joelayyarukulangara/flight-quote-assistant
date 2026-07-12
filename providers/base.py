@@ -7,6 +7,12 @@ app never needs to know which provider produced the data.
 from abc import ABC, abstractmethod
 
 
+class FlightProviderError(Exception):
+    """Common base for any live provider's failure, so orchestration code
+    (services/search_service.py) can handle every provider uniformly
+    without importing each provider's specific exception type."""
+
+
 class FlightProvider(ABC):
     name = "base"
 

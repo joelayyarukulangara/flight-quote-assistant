@@ -214,8 +214,9 @@ class ResultsView(ctk.CTkScrollableFrame):
         text, warning = generate_customer_quote_summary(
             self.quote_result, customer_info, package_info,
             api_key=settings.get("openai_api_key", ""),
-            model_choice=settings.get("ai_model", "nano / cheapest"),
+            model=settings.get("ai_model_name", "gpt-4o-mini"),
             language=settings.get("ai_language", "English"),
+            base_url=settings.get("ai_base_url", "https://api.openai.com/v1"),
         )
         self.clipboard_clear()
         self.clipboard_append(text)

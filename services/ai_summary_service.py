@@ -1,18 +1,25 @@
 """
-Optional OpenAI-powered customer quote wording.
+Optional LLM-powered customer quote wording.
+
+Works with ANY LLM provider that exposes an OpenAI-compatible chat
+completions endpoint -- which is nearly all of them (OpenAI, Groq,
+Mistral, DeepSeek, OpenRouter, Together, Gemini, local Ollama, ...).
+The base URL and model name come from Settings, so switching providers
+is just: paste key, set base URL, set model name.
 
 IMPORTANT: This service NEVER fetches flight fares. Fares always come from
-the flight provider (SerpAPI / mock). OpenAI is used only after rule-based
-filtering and ranking are complete, to turn the already-selected best 4
-package combinations into clean customer-facing wording.
+the flight provider (SerpAPI / SearchAPI / mock). The LLM is used only
+after rule-based filtering and ranking are complete, to turn the
+already-selected best 4 package combinations into clean customer-facing
+wording.
 
 If no API key is configured, AI summary is disabled and callers should use
 the rule-based fallback template produced by build_rule_based_summary().
-The app must work fully without OpenAI.
+The app must work fully without any LLM.
 """
 import json
 
-from config import AI_MODELS, FARE_WARNING_TEXT
+from config import FARE_WARNING_TEXT
 from utils.date_utils import now_str
 
 try:
@@ -80,8 +87,9 @@ def build_rule_based_summary(quote_result, customer_info, package_info, language
 
 
 def generate_customer_quote_summary(quote_result, customer_info, package_info, api_key,
-                                     model_choice="nano / cheapest", language="English"):
-    """Generate customer-friendly quote wording using OpenAI.
+                                     model="gpt-4o-mini", language="English",
+                                     base_url="https://api.openai.com/v1"):
+    """Generate customer-friendly quote wording using any OpenAI-compatible LLM.
 
     Only called when the user explicitly clicks "Generate AI Quote". Falls
     back to the rule-based template on any failure (missing key, package
@@ -92,7 +100,6 @@ def generate_customer_quote_summary(quote_result, customer_info, package_info, a
         return text, "AI summary unavailable; standard quote generated."
 
     payload = _compact_payload(quote_result, customer_info, package_info)
-    model = AI_MODELS.get(model_choice, "gpt-4.1-nano")
     fare_warning = FARE_WARNING_TEXT.format(timestamp=now_str())
 
     system_prompt = (
@@ -106,7 +113,7 @@ def generate_customer_quote_summary(quote_result, customer_info, package_info, a
     )
 
     try:
-        client = OpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key, base_url=base_url or "https://api.openai.com/v1")
         response = client.chat.completions.create(
             model=model,
             messages=[
